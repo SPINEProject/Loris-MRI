@@ -8,9 +8,6 @@
 #4)It doesn't populate the Config tables with paths etc.
 ##################################
 
-# Root path. May be modify for spetial installations. Default value '/data'
-folpat_data='/data_/ipmsa/loris_data'
-
 #Create a temporary log for installation and delete it on completion 
 #@TODO make sure that /tmp is writable
 LOGFILE="/tmp/$(basename $0).$$.tmp"
@@ -67,69 +64,46 @@ mridir=`pwd`
 #################################################################################################
 echo "Installing the perl libraries...This will take a few minutes..."
 #echo $rootpass | sudo perl -MCPAN -e shell
-# AMP #
-# Libraries already installed or installed by the BIC Admins
-# sudo -S cpan install Math::Round
+sudo -S cpan install Math::Round
 #echo $rootpass | sudo -S cpan install Bundle::CPAN
-# sudo -S cpan install Getopt::Tabular
-# sudo -S cpan install Time::JulianDay
-# sudo -S cpan install Path::Class
-# sudo -S cpan install Archive::Extract
-# sudo -S cpan install Archive::Zip
+sudo -S cpan install Getopt::Tabular
+sudo -S cpan install Time::JulianDay
+sudo -S cpan install Path::Class
+sudo -S cpan install Archive::Extract
+sudo -S cpan install Archive::Zip
 echo
 
 #######################################################################################
 #############################Create directories########################################
 #######################################################################################
 echo "Creating the data directories"
-# AMP #
-# Manually executed #
-#  sudo -S su $USER -c "mkdir -m 2770 -p $folpat_data/$PROJ/data/"
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/trashbin"         #holds mincs that didn't match protocol
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/tarchive"         #holds tared dicom-folder
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/pic"              #holds jpegs generated for the MRI-browser
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/logs"             #holds logs from pipeline script
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/jiv"              #holds JIVs used for JIV viewer
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/assembly"         #holds the MINC files
-#  sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/$PROJ/data/batch_output"     #contains the result of the SGE (queue
-#  sudo -S su $USER -c "mkdir -m 770 -p $mridir/dicom-archive/.loris_mri"
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/trashbin
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/tarchive
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/pic
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/logs
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/jiv
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/assembly
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/data/batch_output
-# mkdir -m 770 -p /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/.loris_mri
-# PMA #
+  sudo -S su $USER -c "mkdir -m 2770 -p /data/$PROJ/data/"
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/trashbin"         #holds mincs that didn't match protocol
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/tarchive"         #holds tared dicom-folder
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/pic"              #holds jpegs generated for the MRI-browser
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/logs"             #holds logs from pipeline script
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/jiv"              #holds JIVs used for JIV viewer
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/assembly"         #holds the MINC files
+  sudo -S su $USER -c "mkdir -m 770 -p /data/$PROJ/data/batch_output"     #contains the result of the SGE (queue
+  sudo -S su $USER -c "mkdir -m 770 -p $mridir/dicom-archive/.loris_mri"
 echo
 
 #####################################################################################
 ###############incoming directory using sites########################################
 #####################################################################################
-# AMP #
-# Manually done. Just for one directory: /data_/ipmsa/loris_data/incoming/TestSite/incoming/
-# sudo -S su $USER -c "mkdir -m 2770 -p $folpat_data/incoming/"
-# mkdir -m 2770 -p /data_/ipmsa/loris_data/incoming/
-# mkdir -m 770 -p /data_/ipmsa/loris_data/incoming/TestSite/incoming
+sudo -S su $USER -c "mkdir -m 2770 -p /data/incoming/"
 echo "Creating incoming director(y/ies)"
- #for s in $site; do 
- # sudo -S su $USER -c "mkdir -m 770 -p $folpat_data/incoming/$s/incoming"
- #done
-# PMA #
+ for s in $site; do 
+  sudo -S su $USER -c "mkdir -m 770 -p /data/incoming/$s/incoming"
+ done
 echo
-
 
 ###################################################################################
 #######set environment variables under .bashrc#####################################
 ###################################################################################
 echo "Modifying environment script"
-# AMP # 
-# Manually done
-# sed -i "s#%PROJECT%#$PROJ#g" $mridir/environment
-# sed -i "s#%PROJECT%#IPMSA#g" /data_/ipmsa/loris_data/IPMSA/bin/mri/environment
-# sed -i "s#%MINC_TOOLKIT_DIR%#$MINC_TOOLKIT_DIR#g" $mridir/environment
-# PMA #
+sed -i "s#%PROJECT%#$PROJ#g" $mridir/environment
+sed -i "s#%MINC_TOOLKIT_DIR%#$MINC_TOOLKIT_DIR#g" $mridir/environment
 #Make sure that CIVET stuff are placed in the right place
 #source /data/$PROJ/bin/$mridirname/environment
 export TMPDIR=/tmp
@@ -139,7 +113,7 @@ echo
 ######################Add the proper Apache group user #############################
 ####################################################################################
 if egrep ^www-data: /etc/group > $LOGFILE 2>&1;
-then
+then 
     group=www-data
 elif egrep ^www: /etc/group  > $LOGFILE 2>&1;
 then
@@ -156,38 +130,22 @@ fi
 ####################################################################################
 #echo "Changing permissions"
 
-# AMP #
-# Done Manually #
-#sudo chmod -R 770 $mridir/dicom-archive/.loris_mri/
-# chmod -R 770 /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/.loris_mri/
-#sudo chmod -R 770 $folpat_data/$PROJ/
-# chmod -R 770 /data_/ipmsa/loris_data/IPMSA/
-#sudo chmod -R 770 $folpat_data/incoming/
-# chmod -R 770 /data_/ipmsa/loris_data/incoming/
-# PMA #
+sudo chmod -R 770 $mridir/dicom-archive/.loris_mri/
+sudo chmod -R 770 /data/$PROJ/
+sudo chmod -R 770 /data/incoming/
 
-# AMP #
-# Done by the BIC Admins
 # Making lorisadmin part of the apache group
-# sudo usermod -a -G $group $USER
-# PMA #
+sudo usermod -a -G $group $USER
 
 #Setting group permissions for all files/dirs under /data/$PROJ/ and /data/incoming/
-# AMP #
-# Manually executed
-# sudo chgrp $group -R $folpat_data/$PROJ/
-# chgrp www-data -R /data_/ipmsa/loris_data/IPMSA
-# sudo chgrp $group -R $folpat_data/incoming/
-# chgrp www-data -R /data_/ipmsa/loris_data/incoming/
+sudo chgrp $group -R /data/$PROJ/
+sudo chgrp $group -R /data/incoming/
 
 #Setting group ID for all files/dirs under /data/$PROJ/data
-# sudo chmod -R g+s $folpat_data/$PROJ/data/
-# chmod -R g+s /data_/ipmsa/loris_data/IPMSA/data/
+sudo chmod -R g+s /data/$PROJ/data/
 
 #Setting group ID for all files/dirs under /data/incoming
-# sudo chmod -R g+s $folpat_data/incoming/
-# chmod -R g+s /data_/ipmsa/loris_data/incoming/ 
-# PMA #
+sudo chmod -R g+s /data/incoming/
 echo
 
 #####################################################################################
@@ -195,14 +153,9 @@ echo
 #####################################################################################
 echo "Creating MRI config file"
 
-# AMP #
-# Manually executed
-# cp $mridir/dicom-archive/profileTemplate $mridir/dicom-archive/.loris_mri/$prodfilename
-# cp /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/profileTemplate /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/.loris_mri/prod 
-# sudo chmod 640 $mridir/dicom-archive/.loris_mri/$prodfilename
-# chmod 640 /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/.loris_mri/prod
-# sudo chgrp $group $mridir/dicom-archive/.loris_mri/$prodfilename
-# chgrp www-data /data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive/.loris_mri/prod
+cp $mridir/dicom-archive/profileTemplate $mridir/dicom-archive/.loris_mri/$prodfilename
+sudo chmod 640 $mridir/dicom-archive/.loris_mri/$prodfilename
+sudo chgrp $group $mridir/dicom-archive/.loris_mri/$prodfilename
 
 sed -e "s#DBNAME#$mysqldb#g" -e "s#DBUSER#$mysqluser#g" -e "s#DBPASS#$mysqlpass#g" -e "s#DBHOST#$mysqlhost#g" $mridir/dicom-archive/profileTemplate > $mridir/dicom-archive/.loris_mri/$prodfilename
 echo "config file is located at $mridir/dicom-archive/.loris_mri/$prodfilename"
@@ -235,9 +188,9 @@ fi
 ###### Update the Database table, Config, with the user values #######
 ######################################################################
 echo "Populating database configuration entries for the Imaging Pipeline:"
-mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='$folpat_data/$PROJ/data' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='dataDirBasepath')"
+mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='/data/$PROJ/data' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='dataDirBasepath')"
 mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='$PROJ' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='prefix')"
 mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='$email' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='mail_user')"
-mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='$folpat_data/$PROJ/bin/mri/dicom-archive/get_dicom_info.pl' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='get_dicom_info')"
-mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='$folpat_data/$PROJ/data/tarchive' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='tarchiveLibraryDir')"
+mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='/data/$PROJ/bin/mri/dicom-archive/get_dicom_info.pl' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='get_dicom_info')"
+mysql $mysqldb -h$mysqlhost --user=$mysqluser --password="$mysqlpass" -A -e "UPDATE Config SET Value='/data/$PROJ/data/tarchive' WHERE ConfigID=(SELECT ID FROM ConfigSettings WHERE Name='tarchiveLibraryDir')"
 echo

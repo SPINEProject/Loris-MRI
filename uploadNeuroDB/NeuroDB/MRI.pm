@@ -432,7 +432,10 @@ sub identify_scan_db {
     } elsif ($fileref->{parameters}{modality} eq "PT") {
         # Place to add stuff specific to PET images
     }
-    if(0) {
+    # AMP #
+    #if(0) {
+    if(1) {
+    # PMA #
         if ($fileref->{parameters}{modality} eq "MR") {
             print "\ntr:\t$tr\nte:\t$te\nti:\t$ti\nst:\t$slice_thickness\n";
         }
@@ -482,7 +485,10 @@ sub identify_scan_db {
 
     while($rowref = $sth->fetchrow_hashref()) {
         my $sd_regex = $rowref->{'series_description_regex'};
-        if(0) {
+	# AMP #
+        #if(0) {
+	if(1) {
+	# PMA #
             print "\tChecking ".&scan_type_id_to_text($rowref->{'Scan_type'}, $dbhr)." ($rowref->{'Scan_type'}) ($series_description =~ $sd_regex)\n";
             print "\t";
             if($sd_regex && ($series_description =~ /$sd_regex/i)) {print "series_description\t";}
@@ -1036,6 +1042,10 @@ sub compute_hash {
     open FILE, "minctoraw -nonormalize $filename |" if $fileType eq 'mnc';
     open FILE, "<$filename" unless $fileType eq 'mnc';
 
+    # Alfredo
+    print "\nfilename before hash:" . $filename . "\n\n";
+    # oderflA
+
     # add the file data to the digest
     my $ctx = Digest::MD5->new;
     $ctx->addfile(*FILE);
@@ -1053,10 +1063,24 @@ sub compute_hash {
     $ctx->add($file->getParameter('processing:intergradient_rejected')); 
     # processing:intergradient_rejected minc field is the only field
     # separating a noRegQCedDTI and a QCedDTI minc file.
+
+        # Filename, which includes the filepath was added to the hash function
+        # in order to avoid having the same hash for differente files for
+        # the IPMSA project
+        $ctx->add($file->getFileDatum('File'));
+
+	# AMP 
+	# Print the size of the image to validate correct size
+	print "\nDimensionsXYZ:" . $file->getParameter('xspace') . "," . $file->getParameter('yspace') . "," . $file->getParameter('zspace') . "\n\n";
+	# PMA
     }
 
     # finally generate the hex digest
     my $digest = $ctx->hexdigest;
+
+    # Alfredo
+    print "\nHash:" . $digest . "\n\n";
+    # oderflA
 
     close FILE;
     return $digest;

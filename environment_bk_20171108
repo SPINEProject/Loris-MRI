@@ -1,0 +1,8 @@
+export PATH=/opt/minc/1.9.15/bin:/data/IPMSA/bin/mri:/data/IPMSA/bin/mri/uploadNeuroDB:/data/IPMSA/bin/mri/dicom-archive:$PATH
+export PERL5LIB=/data/IPMSA/bin/mri/uploadNeuroDB:$PERL5LIB
+export TMPDIR=/tmp
+export LORIS_CONFIG=/data/IPMSA/bin/mri/dicom-archive
+
+source /opt/minc/1.9.15/minc-toolkit-config.sh
+umask 0002
+
