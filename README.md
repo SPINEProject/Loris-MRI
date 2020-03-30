@@ -1,12 +1,13 @@
-This Readme covers release 18.0 of the LORIS Imaging Insertion Pipeline for Ubuntu or CentOS systems
+This Readme covers release 22.0.* of the LORIS Imaging Insertion Pipeline for Ubuntu or CentOS systems
 
-This repo accompanies the [LORIS neuroimaging data platform main repo](https://github.com/aces/Loris/releases)</b>, release 18.0.*.<br>
-For documentation and detailed setup information, please see the [LORIS wiki](https://github.com/aces/Loris/wiki/Imaging-Database)</b>.
+This repo accompanies the [LORIS neuroimaging data platform main repo](https://github.com/aces/Loris/releases)</b>, release 22.0.*.<br>
+For documentation and detailed setup information, please see the [LORIS-MRI documentation](docs/) for your installed version</b>.
 
 This repo can be installed on the same VM as the main LORIS codebase, or on a different machine such as a designated fileserver where large imaging filesets are to be stored. 
 
 # System Requirements
  * Perl
+ * Python 3 with pip3 and virtualenv (step 2 below)
  * MINC toolkit (step 3 below)
  * DICOM toolkit (step 4 below)
 
@@ -14,7 +15,7 @@ On <u>Ubuntu</u>, DICOM toolkit will be installed by the imaging install script 
 
 For <u>CentOS</u>: The [LORIS wiki](https://github.com/aces/Loris/wiki/Imaging-Database) Imaging setup page (see Section 1, installing codebase) includes links to older transcripts for [CentOS installation](https://github.com/aces/Loris/wiki/CentOS-Imaging-installation-transcript) and notes on dependencies including [DICOM toolkit](https://github.com/aces/Loris/wiki/CentOS-Imaging-installation-transcript#7-install-dicom-toolkit).
 
-The following installation should be run by the $lorisadmin user. sudo permission is required.
+The following installation should be run by the `$lorisadmin` user. `sudo` permission is required.
 See [aces/Loris](https://github.com/aces/loris) README.md for further information. 
 
 # Installation
@@ -28,14 +29,15 @@ See [aces/Loris](https://github.com/aces/loris) README.md for further informatio
    git clone -b master https://github.com/aces/Loris-MRI.git mri
    ```
 
-#### 2. Install dicom-archive-tools sub-repo within the mri/ directory (created by the git clone command):
+#### 2. Install Python 3 with `pip` and `virtualenv`
 
-   ```bash
-   cd /data/$projectname/bin/mri/
-   git submodule init
-   git submodule sync
-   git submodule update
-   ```
+```bash
+sudo apt-get install python3 
+sudo apt-get install python3-dev
+sudo apt-get install python3-pip
+sudo apt-get install libmysqlclient-dev
+sudo pip3 install virtualenv
+```
 
 #### 3. Install MINC toolkit from http://bic-mni.github.io/ 
 
@@ -45,7 +47,18 @@ Download the pre-compiled package for your operating system.  Install required d
    sudo dpkg -i minc-toolkit<version>.deb
    ```
 
-  Then source the MINC toolkit environment by running (for bash) `source /opt/minc/minc-toolkit-config.sh` or (tcsh) `source /opt/minc/minc-toolkit-config.csh`.
+  Then source the MINC toolkit environment by running (for bash)
+  `source $mincToolsDirectory/minc-toolkit-config.sh` or (tcsh)
+  `source $mincToolsDirectory/minc-toolkit-config.csh`,
+
+  where `$mincToolsDirectory` is the path where the MINC toolkit is installed (e.g. `/opt/minc/` OR `/opt/minc/$mincToolsVersion/` for more recent installs)
+
+For the defacing scripts, you will also need to download the pre-compiled `bic-mni-models` and `beast` data and model packages for you operation system.
+
+   ```bash
+   sudo dpkg -i bic-mni-models-<version>.deb
+   sudo dpkg -i beast-library-<version>.deb
+   ```
 
 #### 4. Run installer to set up directories, configure environment, install Perl libraries and DICOM toolkit:
 
@@ -64,64 +77,32 @@ Download the pre-compiled package for your operating system.  Install required d
  * What is the project name? $projectname
  * What is your email address? 
  * What prod file name would you like to use? default: prod  [leave blank]
- * Enter the list of Site names (space separated) site1 site2
 
-  If the imaging install script reports errors in creating directories (due to /data/ mount permissions), review and manually execute `mkdir/chmod/chown` commands starting at [imaging_install.sh:L97](https://github.com/aces/Loris-MRI/blob/master/imaging_install.sh#L97)
+  If the imaging install script reports errors in creating directories 
+  (due to `/data/` mount permissions), review and manually execute 
+  `mkdir/chmod/chown` commands starting at 
+  [imaging_install.sh:L97](https://github.com/aces/Loris-MRI/blob/master/imaging_install.sh#L97)
 
-  Note: The installer will allow Apache to write to the /data/ directories by adding user lorisadmin to the Apache linux group.  To ensure this change takes effect, log out and log back into your terminal session before running the imaging pipeline.
-The installer will also set Apache group ownership of certain /data/ subdirectories.  
+  Note: The installer will allow Apache to write to the `/data/` directories by 
+  adding user `lorisadmin` to the Apache linux group.  To ensure this change takes 
+  effect, log out and log back into your terminal session before running the 
+  imaging pipeline. The installer will also set Apache group ownership of certain 
+  `/data/` subdirectories.
 
 #### 5. Configure paths and environment
 
-  To help ensure Apache-writability, verify that your environment file contains the following line:
-
-   ```bash 
-   umask 0002
-   ```
-
-   Ensure that /home/lorisadmin/.bashrc includes the statement: 
+   Ensure that `/home/lorisadmin/.bashrc` includes the statement:
 
    ```source /data/$projectname/bin/mri/environment```
 
-   Then source the .bashrc file.   
+   Then source the `.bashrc` file.   
 
-#### 6. Set up MINC utilities for BrainBrowser visualization
+**INSTALLATION COMPLETE!**
 
-To ensure that BrainBrowser can load MINC images, the MINC toolkit must be accessible to the main LORIS codebase.
-(If the Loris-MRI codebase is installed on a separate machine, ensure the MINC toolkit is installed in both locations.)
+Please refer to the [Install](docs/02-Install.md) section in the 
+[LORIS-MRI documentation](docs/) for your installed version for:
+- customizations and protocol configurations ([Section 2.2](docs/02-Install.md#configuration)).
+- verifying that certain fields were correctly populated by `imaging_install.sh`
+([Section 2.3](docs/02-Install.md#post-installation-checks)).
 
-Ensure the _project/config.xml_ file (in the main LORIS codebase) contains the following tagset, specifying the MINC toolkit path local to the main LORIS codebase (/opt/minc/ in this example):
-
-   ```xml
-   <!-- MINC TOOLS PATH -->
-   <MINCToolsPath>/opt/minc/</MINCToolsPath>
-   ```
-
-#### 7. Verify filesystem permissions 
-
-Ensure that permissions on /data/$projectname and /data/incoming and their subdirectories are set such that lorisadmin and the Apache linux user can read, write _and_ execute all contents.
-
-The following must be recursively owned by the lorisadmin user and by Apache group:
-
-   ```bash
-   /data/$projectname/data/ 
-   /data/$projectname/bin/mri/
-   /data/incoming/
-   /data/$projectname/bin/mri/dicom-archive/.loris_mri/prod
-   ```
-#### 8. Verify Configuration module settings for Imaging Pipeline
-  
-In the LORIS front-end, under the Admin menu, go to the `Config` module.  Under the section `Imaging Pipeline`, verify/set the following config settings: 
- * `Loris-MRI Data Directory`
- * `Study Name`
- * `User to notify when executing the pipeline`
- * `Full path to get_dicom_info.pl script`
- * `Path to Tarchives`
-
-Click 'Submit' at the end of the Configuration page to save any changes. 
-
-<br>
-Installation complete.
-
-For customizations and protocol configurations, see LORIS Imaging Setup Guide : https://github.com/aces/Loris/wiki/Imaging-Database 
 

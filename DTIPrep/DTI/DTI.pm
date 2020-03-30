@@ -2,17 +2,54 @@
 
 =head1 NAME
 
-DTI --- A set of utility functions for performing common tasks relating to DTI data (particularly with regards to perform DTI QC)
+DTI::DTI --- A set of utility functions for performing common tasks relating to
+DTI data (particularly with regards to performing DTI QC)
 
 =head1 SYNOPSIS
 
-use DTI;
+  use DTI::DTI;
+
+  my ($protXMLrefs) = &DTI::readDTIPrepXMLprot( $DTIPrepProtocol );
+
+  my ($QCoutdir) = &DTI::createOutputFolders( $outdir,     $subjID,
+                                              $visit,      $DTIPrepProtocol,
+                                              $runDTIPrep
+                                            );
+
+  my ($DTIs_list)  = &DTI::getRawDTIFiles( $nativedir, $DTI_volumes );
+  my ($anat)       = &DTI::getAnatFile( $nativedir, $t1_scan_type );
+  my ($DTIrefs)    = &DTI::createDTIhashref( $DTIs_list,   $anat,
+                                             $QCoutdir,    $DTIPrepProtocol,
+                                             $protXMLrefs, $QCed2_step
+                                           );
+
+  my ($convert_status) = &DTI::convert_DTI( $dti_file,
+                                            $raw_nrrd,
+                                            '--short --minc-to-nrrd --dwi'
+                                          );
+
+  my ($copyProt_status) = &DTI::copyDTIPrepProtocol($DTIPrepProtocol, $QCProt);
+  my ($DTIPrep_status)  = &DTI::runDTIPrep( $raw_nrrd,  $DTIPrepProtocol,
+                                            $QCed_nrrd, $QCed2_nrrd
+                                          );
+
+
+  ($convert_status) = &DTI::convert_DTI( $QCed_nrrd,
+                                         $QCed_minc,
+                                         '--nrrd-to-minc --dwi'
+                                       );
+  ($insert_header)  = &DTI::insertMincHeader( $dti_file,      $data_dir,
+                                              $QCed_minc,     $QCTxtReport,
+                                              $DTIPrepVersion
+                                            );
+
 
 =head1 DESCRIPTION
 
-Really a mismatch of utility functions, primarily used by DTIPrep_pipeline.pl and DTIPrepRegister.pl
+A mishmash of utility functions, primarily used by C<DTIPrep_pipeline.pl>
+and C<DTIPrepRegister.pl>.
 
-=head1 METHODS
+=head2 Methods
 
 =cut
 
@@ -26,6 +63,7 @@ use Date::Parse;
 use MNI::Startup        qw(nocputimes);
 use MNI::Spawn;
 use MNI::FileUtilities  qw(check_output_dirs);
+use NeuroDB::MRI;
 
 @ISA        = qw(Exporter);
 
@@ -33,21 +71,27 @@ use MNI::FileUtilities  qw(check_output_dirs);
 @EXPORT_OK  = qw(createOutputFolders getFiles sortParam insertMincHeader create_processed_maps);
 
 
-
-
-
-
-
-
 =pod
-Create DTIPrep pipeline output folders.
-- Inputs:   - $outdir       = base output folder (folder where all candidate's DTIPrep outputs will be saved)
-            - $subjID       = candidate ID stored in dataset's basename
-            - $visit        = visit label stored in dataset's basename
-            - $protocol     = DTIPrep XML protocol that will be used (or has been used) to run DTIPrep
-            - $runDTIPrep   = boolean variable. If set to 1, DTIPrep will be run and need to create output folders. If set to undef, DTIPrep has already been run and folder already exists
-- Outputs:  - $QC_out       = candidate/visit/protocol folder that was created and that will store DTIPrep outputs. This will be return only if $QC_out exists in the file system.
+
+=head3 createOutputFolders($outdir, $subjID, $visit, $protocol, $runDTIPrep)
+
+Creates DTIPrep pipeline output folders. It will return the created output
+folder only if the output folder was created.
+
+INPUTS:
+  - $outdir    : base output folder
+  - $subjID    : candidate ID stored in dataset's basename
+  - $visit     : visit label stored in dataset's basename
+  - $protocol  : DTIPrep XML protocol to use (or used) to run DTIPrep
+  - $runDTIPrep: if set, will run DTIPrep and create the output dir.
+
+Note: If C<$runDTIPrep> is not set, then DTIPrep was already run and the
+output folder already exists.
+
+RETURNS: C<candidate/visit/protocol> folder that will store DTIPrep outputs.
+
 =cut
+
 sub createOutputFolders{
     my  ($outdir, $subjID, $visit, $protocol, $runDTIPrep) = @_;   
     
@@ -63,22 +107,21 @@ sub createOutputFolders{
 }
 
 
-
-
-
-
-
-
-
-
-
 =pod
-Subroutine that will read the content of a directory and return a list 
-of files matching the string given in argument with $match.
-Inputs:  - $dir:    directory containing files to be fetch
-         - $match:  string used to look for files to be returned
-Outputs: - @files_list: list of files found in $dir matching $match
+
+=head3 getFilesList($dir, $match)
+
+Subroutine that will read the content of a directory and return a list
+of files whose names match the string given in argument with C<$match>.
+
+INPUTS:
+  - $dir  : directory with DTI files to be fetch
+  - $match: string used to look for DTI files to be returned
+
+RETURNS: list of DTI files found in C<$dir> matching C<$match>
+
 =cut
+
 sub getFilesList {
     my ($dir, $match)   = @_;
     my (@files_list)    = ();
@@ -101,40 +144,49 @@ sub getFilesList {
 
 
 =pod
-Function that parses files in native MRI directory and grab 
-the T1 acquisition based on $t1_scan_type.
-Inputs:  - $nativedir: directory containing native imaging files
-         - $t1_scan_type: scan type string used for t1 acquisitions
-Outputs: - If no anat was found, will return undef.
-         - If multiple anat were found, will return the first anat of the list.
+
+=head3 getAnatFile($nativedir, $t1_scan_type)
+
+Function that parses files in the native MRI directory and grabs
+the T1 acquisition based on C<$t1_scan_type>.
+
+INPUTS:
+  - $nativedir   : native directory
+  - $t1_scan_type: scan type string used for t1 acquisitions
+
+RETURNS:
+  - undef if no anat found
+  - $anat: anatomical file (first anat found if multiple anats were found).
+
 =cut
+
 sub getAnatFile {
     my ($nativedir, $t1_scan_type)  = @_;
 
-    # Fetch files in native directory that matched t1_scan_type
-    my $anat_list   = DTI::getFilesList($nativedir, $t1_scan_type);
+    # Fetch files in native directory that matched t1_scan_type and MINC file type
+    my $anat_list = DTI::getFilesList($nativedir, "\_$t1_scan_type\_[^_]+\.mnc\$");
 
     # Return undef if no anat found, first anat otherwise
-    if (@$anat_list == 0) { 
-        return undef; 
-    } else { 
-        my $anat    = @$anat_list[0];
-        return $anat;
-    }
+    return @$anat_list ? @$anat_list[0] : undef;
 }
 
 
-
-
-
 =pod
-Function that parses files in native MRI directories and fetch DTI files. 
-This function will also concatenate together multipleDTI files if DTI 
-acquisition performed accross several DTI scans.
-Inputs:  - $nativedir: directory containing native files
-         - $DTIvolumes: DTI's number of volumes
-Outputs: - @DTIs_list: list of matching DTIs found in native directory
+
+=head3 getRawDTIFiles($nativedir, $DTI_volumes)
+
+Function that parses files in the native MRI directories and fetches DTI files.
+This function will also concatenate together multiple DTI files if the DTI
+acquisition was performed across several DTI scans.
+
+INPUTS:
+  - $nativedir  : native directory
+  - $DTI_volumes: DTI's number of volumes
+
+RETURNS: list of matching DTI files found in the native directory
+
 =cut
+
 sub getRawDTIFiles{
     my ($nativedir, $DTI_volumes)   = @_;
     
@@ -143,12 +195,17 @@ sub getRawDTIFiles{
 
     ## Grab the mincs I want, a.k.a. with minc file with $DTI_volumes 
     my @DTI_frames  = split(',',$DTI_volumes);
+
+    # Filter the frames list: keep only the strings that are integers
+    # (this should not remove anything since the $DTI_volumes string is
+    # assumed to be a comma separated list of integers)
+    @DTI_frames = grep($_ =~ /^\s*\d+\s*$/, @DTI_frames);
     my @DTIs_list   = (); 
     foreach my $mnc (@$mincs_list) {
         if  (`mincinfo -dimnames $mnc` =~ m/time/)    {
             my $time    = `mincinfo -dimlength time $mnc`;
             chomp($time);
-            if  ($time ~~ \@DTI_frames) {
+            if (grep($time == $_, @DTI_frames)) {
                 push (@DTIs_list, $mnc);
             }
         }
@@ -159,17 +216,21 @@ sub getRawDTIFiles{
 }
 
 
-
-
-
-
 =pod
-Function that will copy the DTIPrep protocol used to the output directory of DTIPrep. 
-Inputs:  - $DTIPrepProtocol: DTIPrep protocol to be copied
-         - $QCProt: path of copied DTIPrep protocol
-Outputs: - 1 if copy was successful
-         - undef if copy failed
+
+=head3 copyDTIPrepProtocol($DTIPrepProtocol, $QCProt)
+
+Function that will copy the C<DTIPrep> protocol to the output directory of
+C<DTIPrep>.
+
+INPUTS:
+  - $DTIPrepProtocol: C<DTIPrep> protocol to be copied
+  - $QCProt         : future path of copied C<DTIPrep> protocol
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub copyDTIPrepProtocol {
     my ($DTIPrepProtocol, $QCProt)    =   @_;
 
@@ -184,35 +245,40 @@ sub copyDTIPrepProtocol {
 }
 
 
-
-
-
 =pod
-Read DTIPrep XML protocol and return information into a hash.
-- Inputs: - $DTIPrepProtocol    = XML protocol used (or that has been used) to run DTIPrep
-- Output: - $protXMLrefs        = dereferenced hash containing DTIPrep protocol as follows:
-        entry   => 'QC_QCOutputDirectory'     => {}
-                => 'QC_QCedDWIFileNameSuffix' => { 
-                                                  'value'   => '_QCed.nrrd'
-                                                 },
-                => 'IMAGE_bCheck'             => {
-                         'entry' => {
-                                    'IMAGE_size' => {
-                                                    'value' => [
-                                                               '96',
-                                                               '96',
-                                                               '65'
-                                                               ]
-                                                    },
-                                    'IMAGE_reportFileMode'  => {
-                                                               'value' => '1'
-                                                               }, 
-                                    ...                
-                                    'value' => 'Yes'
-                                    },
-                => 'QC_badGradientPercentageTolerance' => {
-                            etc...
+
+=head3 readDTIPrepXMLprot($DTIPrepProtocol)
+
+Read C<DTIPrep> XML protocol and return information into a hash.
+
+INPUT: XML protocol used (or that has been used) to run C<DTIPrep>
+
+RETURNS: reference to a hash containing C<DTIPrep> protocol as follows:
+
+  entry   => 'QC_QCOutputDirectory'     => {}
+          => 'QC_QCedDWIFileNameSuffix' => {
+                                            'value'   => '_QCed.nrrd'
+                                           },
+          => 'IMAGE_bCheck'             => {
+                   'entry' => {
+                              'IMAGE_size' => {
+                                               'value' => [
+                                                           '96',
+                                                           '96',
+                                                           '65'
+                                                          ]
+                                              },
+                              'IMAGE_reportFileMode'  => {
+                                                          'value' => '1'
+                                                         },
+                              ...
+                              'value' => 'Yes'
+                              },
+          => 'QC_badGradientPercentageTolerance' => {
+            ...
+
 =cut
+
 sub readDTIPrepXMLprot {
     my ($DTIPrepProtocol)   = @_;
 
@@ -226,27 +292,35 @@ sub readDTIPrepXMLprot {
 }
 
 
-
-
-
-
 =pod
-Function that will determine output names based on each DTI file dataset and return a hash of DTIref:
+
+=head3 createDTIhashref($DTIs_list, $anat, $QCoutdir, $DTIPrepProtocol, $protXMLrefs, $QCed2_step)
+
+Function that will determine output names based on each DTI file dataset and
+return a hash of DTIref:
+
        dti_file_1  -> Raw_nrrd     => outputname
                    -> QCed_nrrd    => outputname
                    -> QCTxtReport  => outputname
                    -> QCXmlReport  => outputname
                    -> QCed_minc    => outputname
                    -> QCProt       => outputname
-       dti_file_2  -> Raw_nrrd     => outputname etc...
-Inputs:  - $DTIs_list: list of native DTI files to be processed
-         - $anat: anat file to be used for processing
-         - $QCoutdir: output directory that will be used to stored processed data
-         - $DTIPrepProtocol: DTIPrep XML protocol used to run DTIPrep
-         - $protXMLrefs: hash containing all information about DTIPrep protocol to be used
-         - $QCed2_step: optionaly, step name at which DTIPrep will produce a secondary QCed file
-Outputs: - $DTIrefs: hash containing outputs naming convension
+       dti_file_2  -> Raw_nrrd     => outputname
+        ...
+
+INPUTS:
+  - $DTIs_list      : list of native DTI files to be processed
+  - $anat           : anatomical file to be used for processing
+  - $QCoutdir       : processed output directory
+  - $DTIPrepProtocol: C<DTIPrep> XML protocol used to run C<DTIPrep>
+  - $protXMLrefs    : hash containing info about C<DTIPrep>'s protocol
+  - $QCed2_step     : optionally, step name at which C<DTIPrep> will
+                       produce a secondary QCed file
+
+RETURNS: hash containing outputs naming convention
+
 =cut
+
 sub createDTIhashref {
     my ($DTIs_list, $anat, $QCoutdir, $DTIPrepProtocol, $protXMLrefs, $QCed2_step)    =   @_;
     my %DTIrefs;
@@ -269,19 +343,25 @@ sub createDTIhashref {
 }
 
 
-
-
-
-
-
 =pod
-Function that will determine post processing output names (for either DTIPrep or mincdiffusion postprocessing) and append them to $DTIrefs.
-- Inputs:   - $QCoutdir         = directory that will contain output files
-            - $dti_file         = raw DWI file to be processed
-            - $DTIPrepProtocol  = DTIPrepProtocol to copy into output directory
-            - $protXMLrefs      = hash containing informations stored in DTIPrep XML protocol (with suffix for the different outputs, among other things) 
-- Outputs:  - $DTIrefs{$dti_file}{'Preproc'}{'Output'} fields for DTIPrep preprocessing
+
+=head3 determinePreprocOutputs($QCoutdir, $dti_file, $DTIPrepProtocol, $protXMLrefs)
+
+Function that will determine pre processing output names (for either C<DTIPrep>
+or C<mincdiffusion> postprocessing) and append them to C<$DTIrefs>.
+
+INPUTS:
+  - $QCoutdir       : directory that will contain output files
+  - $dti_file       : raw DWI file to be processed
+  - $DTIPrepProtocol: C<DTIPrep> protocol to copy into output directory
+  - $protXMLrefs    : hash containing info from C<DTIPrep> XML protocol
+                       (including suffix for the different outputs)
+
+RETURNS: $DTIrefs{$dti_file}{'Preproc'}{'Output'} fields for C<DTIPrep>
+processing
+
 =cut
+
 sub determinePreprocOutputs {
     my ($QCoutdir, $dti_file, $DTIPrepProtocol, $protXMLrefs, $QCed2_step)   = @_;
 
@@ -317,14 +397,25 @@ sub determinePreprocOutputs {
 
 
 =pod
-Function that will determine post processing output names (for either DTIPrep or mincdiffusion postprocessing) and append them to $DTIrefs.
-- Inputs:   - $QCoutdir     = directory that will contain output files
-            - $dti_file     = raw DWI file to be processed
-            - $anat         = anatomic T1 image to be used for mincdiffusion postprocessing
-            - $protXMLrefs  = hash containing informations stored in DTIPrep XML protocol (with suffix for the different outputs, among other things) 
-- Outputs:  - $DTIrefs{$dti_file}{'Postproc'}{'Tool'} field storing which postprocessing pipeline was used
-            - $DTIrefs{$dti_file}{'Postproc'}{'Output'} fields for DTIPrep postprocessing
+
+=head3 determinePostprocOutputs($QCoutdir, $dti_file, $anat, $protXMLrefs)
+
+Function that will determine post processing output names (for either C<DTIPrep>
+or C<mincdiffusion> postprocessing) and append them to C<$DTIrefs>.
+
+INPUTS:
+  - $QCoutdir   : directory that will contain output files
+  - $dti_file   : raw DWI file to be processed
+  - $anat       : T1 image to be used for C<mincdiffusion> postprocessing
+  - $protXMLrefs: hash containing info from C<DTIPrep> XML protocol
+                   (including suffix for the different outputs)
+
+RETURNS:
+  - $DTIrefs{$dti_file}{'Postproc'}{'Tool'} with postprocessing used
+  - $DTIrefs{$dti_file}{'Postproc'}{'Output'} fields for C<DTIPrep> postprocessing
+
 =cut
+
 sub determinePostprocOutputs {
     my ($QCoutdir, $dti_file, $anat, $protXMLrefs) = @_;
 
@@ -348,13 +439,24 @@ sub determinePostprocOutputs {
     }
 }
 
+
 =pod
-Function that will determine DTIPrep's postprocessing output names (based on the XML protocol) and append them to $DTIrefs
-- Inputs:   - $QCoutdir     = directory that will contain output files
-            - $dti_file     = raw DWI file to be processed
-            - $protXMLrefs  = hash containing informations stored in DTIPrep XML protocol (with suffix for the different outputs, among other things) 
-- Outputs:  - $DTIrefs{$dti_file}{'Postproc'}{'Output'} fields for DTIPrep postprocessing
+
+=head3 determineDTIPrepPostprocOutputs($QCoutdir, $dti_file, $protXMLrefs)
+
+Function that will determine C<DTIPrep>'s postprocessing output names (based on
+the XML protocol) and append them to C<$DTIrefs>
+
+INPUTS:
+  - $QCoutdir   : directory that will contain output files
+  - $dti_file   : raw DWI file to be processed
+  - $protXMLrefs: hash containing info from C<DTIPrep> XML protocol
+
+RETURNS: $DTIrefs{$dti_file}{'Postproc'}{'Output'} fields for C<DTIPrep>
+postprocessing
+
 =cut
+
 sub determineDTIPrepPostprocOutputs {
     my ($QCoutdir, $dti_file, $QCed_suffix, $protXMLrefs) = @_;
     
@@ -416,14 +518,24 @@ sub determineDTIPrepPostprocOutputs {
     }
 }    
 
+
 =pod
-Function that will determine mincdiffusion postprocessing output names and append them to $DTIrefs
-- Inputs:   - $QCoutdir     = directory that will contain output files
-            - $dti_file     = raw DWI file to be processed
-            - $QCed_suffix  = QCed suffix used to create QCed nrrd and determine postprocessing file names
-            - $anat         = anatomic T1 file to use for DWI-anat registration
-- Outputs:  - $DTIrefs{$dti_file}{'Postproc'} for mincdiffusion postprocessing
+
+=head3 determineMincdiffusionPostprocOutputs($QCoutdir, $dti_file, $QCed_suffix, $anat)
+
+Function that will determine C<mincdiffusion> postprocessing output names and
+append them to C<$DTIrefs>
+
+INPUTS:
+  - $QCoutdir   : directory that will contain output files
+  - $dti_file   : raw DWI file to be processed
+  - $QCed_suffix: QCed suffix for QCed NRRD & postprocessing file names
+  - $anat       : anatomic T1 file to use for DWI-anat registration
+
+RETURNS: $DTIrefs{$dti_file}{'Postproc'} for C<mincdiffusion> postprocessing
+
 =cut
+
 sub determineMincdiffusionPostprocOutputs {
     my ($QCoutdir, $dti_file, $QCed_suffix, $anat) = @_;
     
@@ -458,14 +570,21 @@ sub determineMincdiffusionPostprocOutputs {
 }    
 
 =pod
-Function that convert minc file to nrrd or nrrd file to minc. 
-(depending on $options)
-Inputs:  - $file_in: file to be converted 
-         - $file_out: converted file
-         - $options: conversion options: mnc2nrrd or nrrd2mnc
-Outputs: - 1 if conversion was successful
-         - undef if conversion failed
+
+=head3 convert_DTI($file_in, $file_out, $options)
+
+Function that converts MINC file to NRRD or NRRD file to MINC.
+(depending on C<$options>)
+
+INPUTS:
+  - $file_in : file to be converted
+  - $file_out: converted file
+  - $options : conversion options (C<mnc2nrrd> or C<nrrd2mnc>)
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub convert_DTI {
     my  ($file_in, $file_out, $options)    =   @_;
 
@@ -486,19 +605,22 @@ sub convert_DTI {
 }
 
 
-
-
-
-
 =pod
-Function that run DTIPrep on nrrd file. 
-Inputs:  - $raw_nrrd: raw DTI nrrd file to be processed through DTIPrep
-         - $protocol: DTIPrep protocol used
-         - $QCed_nrrd:  QCed file produced by DTIPrep
-         - $QCed2_nrrd: optionaly, secondary QCed file
-Outputs: - 1 if QCed file found and secondary QCed file (if defined) is found
-         - undef if DTIPrep outputs not found
+
+=head3 runDTIPrep($raw_nrrd, $protocol, $QCed_nrrd, $QCed2_nrrd)
+
+Function that runs C<DTIPrep> on NRRD file.
+
+INPUTS:
+  - $raw_nrrd  : raw DTI NRRD file to be processed through C<DTIPrep>
+  - $protocol  : C<DTIPrep> protocol used
+  - $QCed_nrrd : QCed file produced by C<DTIPrep>
+  - $QCed2_nrrd: optionally, secondary QCed file
+
+RETURNS: 1 on success, under on failure
+
 =cut
+
 sub runDTIPrep {
     my  ($raw_nrrd, $protocol, $QCed_nrrd, $QCed2_nrrd)  =   @_;    
 
@@ -516,30 +638,34 @@ sub runDTIPrep {
 }
 
 
-
-
-
-
 =pod
-Insert in the minc header all the acquisition arguments except:
-    - acquisition:bvalues
-    - acquisition:direction_x
-    - acquisition:direction_y
-    - acquisition:direction_z
-    - acquisition:b_matrix
 
-Takes the raw DTI file and the QCed minc file as input and modify 
-the QCed minc file based on the raw minc file's argument.
+=head3 insertMincHeader($raw_file, $data_dir, $processed_minc, $QC_report, $DTIPrepVersion, $is_anat)
 
-Inputs:  - $raw_file: raw DTI minc file to grep header information
-         - $data_dir: data dir as defined in the profile file
-         - $processed_minc: processed minc file in which header information will be inserted
-         - $QC_report: DTIPrep QC report text file
-         - $DTIPrepVersion: DTIPrep version used to obtain processed file
-         - $is_anat: if defined (=if file is anat based), will only insert processing, patient and study information 
-Outputs: - 1 if if all mincheader information was inserted
-         - undef otherwise
+Inserts in the MINC header all the acquisition arguments except:
+  - acquisition:bvalues
+  - acquisition:direction_x
+  - acquisition:direction_y
+  - acquisition:direction_z
+  - acquisition:b_matrix
+
+Takes the raw DTI file and the QCed MINC file as input and modifies
+the QCed MINC file based on the raw MINC file's argument.
+
+If one of the value to insert is not defined, return undef, otherwise return 1.
+
+INPUTS:
+  - $raw_file      : raw DTI MINC file to grep header information
+  - $data_dir      : data dir as defined in the profile file
+  - $processed_minc: processed MINC file in which to insert header information
+  - $QC_report     : C<DTIPrep> QC report text file
+  - $DTIPrepVersion: C<DTIPrep> version used to obtain processed file
+  - $is_anat       : if set, will only insert processing, patient & study info
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub insertMincHeader {
     my  ($raw_file, $data_dir, $processed_minc, $QC_report, $DTIPrepVersion, $is_anat)    =   @_;
 
@@ -562,40 +688,61 @@ sub insertMincHeader {
     }
 }
 
+
 =pod
-This will insert in the header of the processed file processing information.
-Inputs:  - $raw_dti: raw DTI minc file to grep header information
-         - $data_dir: data dir as defined in the profile file
-         - $processed_minc: processed minc file in which header information will be inserted
-         - $QC_report: DTIPrep QC report text file
-         - $DTIPrepVersion: DTIPrep version used to obtain processed file
-Outputs: - 1 if all processed info were inserted in the processed minc header
-         - undef otherwise
+
+=head3 insertProcessInfo($raw_dti, $data_dir, $processed_minc, ...)
+
+This will insert in the header of the processed file processing information. If
+one of the value to insert is not defined, return undef, otherwise return 1.
+
+INPUTS:
+  - $raw_dti       : raw DTI MINC file to grep header information from
+  - $data_dir      : data dir as defined in the profile file
+  - $processed_minc: processed MINC file in which to insert header info
+  - $QC_report     : C<DTIPrep> QC report text file
+  - $DTIPrepVersion: C<DTIPrep> version used to obtain processed file
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub insertProcessInfo {
     my ($raw_dti, $data_dir, $processed_minc, $QC_report, $DTIPrepVersion) = @_;
 
     # 1) processing:sourceFile
     my  $sourceFile         =   $raw_dti;
     $sourceFile             =~  s/$data_dir//i;
-    my ($sourceFile_insert) = &DTI::modify_header('processing:sourceFile', $sourceFile, $processed_minc, '$3, $4, $5, $6');
+    my ($sourceFile_insert) = &DTI::modify_header(
+        'processing:sourceFile', $sourceFile, $processed_minc
+    );
 
     # 2) processing:sourceSeriesUID information (dicom_0x0020:el_0x000e field of $raw_dti)
-    my  ($seriesUID)        = &DTI::fetch_header_info('dicom_0x0020:el_0x000e',$raw_dti,'$3, $4, $5, $6');
-    my ($seriesUID_insert)  = &DTI::modify_header('processing:sourceSeriesUID', $seriesUID, $processed_minc, '$3, $4, $5, $6');
+    my  ($seriesUID) = &NeuroDB::MRI::fetch_header_info(
+        $raw_dti, 'dicom_0x0020:el_0x000e'
+    );
+    my ($seriesUID_insert)  = &DTI::modify_header(
+        'processing:sourceSeriesUID', $seriesUID, $processed_minc
+    );
 
     # 3) processing:pipeline used
-    my ($pipeline_insert)   = &DTI::modify_header('processing:pipeline', 'DTIPrepPipeline', $processed_minc, '$3, $4, $5, $6');
+    my ($pipeline_insert)   = &DTI::modify_header(
+        'processing:pipeline', 'DTIPrepPipeline', $processed_minc
+    );
     
     # 4) processing:tool used
-    my ($tool_insert)       = &DTI::modify_header('processing:tool', $DTIPrepVersion, $processed_minc, '$3, $4, $5, $6');
+    my ($tool_insert)       = &DTI::modify_header(
+        'processing:tool', $DTIPrepVersion, $processed_minc
+    );
 
     # 5) processing:processing_date (when DTIPrep was run)
     my  $check_line         =   `cat $QC_report | grep "Check Time"`;
     $check_line             =~  s/Check Time://;  # Only keep date info in $check_line.
     my ($ss,$mm,$hh,$day,$month,$year,$zone)    =   strptime($check_line);
     my $processingDate      =   sprintf("%4d%02d%02d",$year+1900,$month+1,$day);
-    my ($date_insert)       = &DTI::modify_header('processing:processing_date', $processingDate, $processed_minc, '$3, $4, $5, $6');
+    my ($date_insert)       = &DTI::modify_header(
+        'processing:processing_date', $processingDate, $processed_minc
+    );
 
     if (($sourceFile_insert) 
      && ($seriesUID_insert) 
@@ -609,28 +756,40 @@ sub insertProcessInfo {
 }
 
 
-
-
-
-
 =pod
-Insert acquisition information extracted from raw DTI dataset and insert it in the processed file. 
-If one of the value to insert is not defined, return undef, otherwise return 1.
-Inputs:  - $raw_dti: raw DTI minc file to grep header information
-         - $processed_minc: processed minc file in which header information will be inserted
-Outputs: - 1 if acquisition information were inserted in processed DTIPrep mincs
-         - undef otherwise
+
+=head3 insertAcqInfo($raw_dti, $processed_minc)
+
+Inserts acquisition information extracted from raw DTI dataset and insert it in
+the processed file. If one of the value to insert is not defined, return
+undef, otherwise return 1.
+
+INPUTS:
+  - $raw_dti       : raw DTI MINC file to grep header information
+  - $processed_minc: processed MINC file in which to insert header info
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub insertAcqInfo {
     my  ($raw_dti, $processed_minc) = @_;
 
     # 1) insertion of acquisition:b_value 
-    my ($b_value)       = DTI::fetch_header_info('acquisition:b_value',$raw_dti,'$3, $4, $5, $6');
-    my ($bvalue_insert) = DTI::modify_header('acquisition:b_value', $b_value, $processed_minc, '$3, $4, $5, $6');
+    my ($b_value) = &NeuroDB::MRI::fetch_header_info(
+        $raw_dti, 'acquisition:b_value'
+    );
+    my ($bvalue_insert) = DTI::modify_header(
+        'acquisition:b_value', $b_value, $processed_minc
+    );
 
     # 2) insertion of acquisition:delay_in_TR 
-    my ($delay_in_tr)   = DTI::fetch_header_info('acquisition:delay_in_TR',$raw_dti,'$3, $4, $5, $6');
-    my ($delaytr_insert)= DTI::modify_header('acquisition:delay_in_TR', $delay_in_tr, $processed_minc, '$3, $4, $5, $6');
+    my ($delay_in_tr) = &NeuroDB::MRI::fetch_header_info(
+        $raw_dti, 'acquisition:delay_in_TR'
+    );
+    my ($delaytr_insert)= DTI::modify_header(
+        'acquisition:delay_in_TR', $delay_in_tr, $processed_minc
+    );
 
     # 3) insertion of all the remaining acquisition:* arguments 
     #    [except acquisition:bvalues, acquisition:b_matrix and acquisition:direction* (already in header from nrrd2minc conversion)]
@@ -644,36 +803,45 @@ sub insertAcqInfo {
 }
 
 
-
-
-
 =pod
-Insert information extracted from raw DTI dataset and insert it in the processed file. 
-If one of the value to insert is not defined, return undef, otherwise return 1.
-Inputs:  - $raw_dti: raw DTI minc file to grep header information
-         - $processed_minc: processed minc file in which header information will be inserted
-         - $minc_field: minc field to be inserted in processed minc file
-Outputs: - 1 if information were inserted in processed DTIPrep mincs
-         - undef otherwise
+
+=head3 insertFieldList($raw_dti, $processed_minc, $minc_field)
+
+Inserts information extracted from raw DTI dataset and insert it in the
+processed file. If one of the value to insert is not defined, return undef,
+otherwise return 1.
+
+INPUTS:
+  - $raw_dti       : raw DTI MINC file to grep header information from
+  - $processed_minc: processed MINC file in which to insert header info
+  - $minc_field    : MINC field to be inserted in processed MINC file
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub insertFieldList {
     my  ($raw_dti, $processed_minc, $minc_field) = @_;
 
     # fetches list of arguments starting with $minc_field (i.e. 'patient:'; 'study:' ...)
-    my  ($arguments) =   DTI::fetch_header_info($minc_field, $raw_dti, '$1, $2');
+    my  ($arguments) = &NeuroDB::MRI::fetch_header_info(
+        $raw_dti, $minc_field, 0, 1
+    );
 
     # fetches list of values with arguments starting with $minc_field. Don't remove semi_colon (last option of fetch_header_info).
-    my  ($values) =   DTI::fetch_header_info($minc_field, $raw_dti, '$3, $4, $5, $6, $7', 1);
+    my  ($values) = &NeuroDB::MRI::fetch_header_info($raw_dti, $minc_field, 1);
 
-    my  ($arguments_list, $arguments_list_size) =   get_header_list('=', $arguments);
-    my  ($values_list, $values_list_size)       =   get_header_list(';', $values);
+    my  ($arguments_list, $arguments_list_size) = get_header_list('\cI\cI', $arguments);
+    my  ($values_list, $values_list_size)       = get_header_list(';',      $values);
 
     my  @insert_failure;
     if  ($arguments_list_size   ==  $values_list_size)  {
         for (my $i=0;   $i<$arguments_list_size;    $i++)   {
             my  $argument   =   @$arguments_list[$i];
             my  $value      =   @$values_list[$i];
-            my ($insert)    = DTI::modify_header($argument, $value, $processed_minc, '$3, $4, $5, $6');
+            my ($insert)    = DTI::modify_header(
+                $argument, $value, $processed_minc
+            );
             # store in array @insert_failure the arguments that were not successfully inserted in the mincheader
             push (@insert_failure, $argument) if (!$insert);
         }
@@ -689,28 +857,35 @@ sub insertFieldList {
     }
 }    
 
+
 =pod
-Function that runs minc_modify_header and insert 
-minc header information if not already inserted.
-Inputs:  - $argument: argument to be inserted in minc header
-         - $value: value of the argument to be inserted in minc header
-         - $minc: minc file
-         - $awk: awk information to check if argument not already inserted in minc header
-Outputs: - 1 if argument was indeed inserted into the minc file
-         - undef otherwise
+
+=head3 modify_header($argument, $value, $minc)
+
+Function that runs C<minc_modify_header> and inserts MINC header information if
+not already inserted.
+
+INPUTS:
+  - $argument: argument to be inserted in MINC header
+  - $value   : value of the argument to be inserted in MINC header
+  - $minc    : MINC file
+
+RETURNS: 1 if argument was inserted in the MINC header, undef otherwise
+
 =cut
+
 sub modify_header {
-    my  ($argument, $value, $minc, $awk) =   @_;
+    my  ($argument, $value, $minc) =   @_;
     
     # check if header information not already in minc file
-    my $hdr_val =   &DTI::fetch_header_info($argument, $minc, $awk);
+    my $hdr_val = &NeuroDB::MRI::fetch_header_info($minc, $argument);
 
     # insert mincheader unless mincheader field already inserted ($hdr_val eq $value)
-    my  $cmd    =   "minc_modify_header -sinsert $argument=$value $minc";
+    my $cmd = "minc_modify_header -sinsert $argument=" . quotemeta($value) . " $minc";
     system($cmd)    unless (($hdr_val) && ($value eq $hdr_val));
 
     # check if header information was indeed inserted in minc file
-    my $hdr_val2 =   &DTI::fetch_header_info($argument, $minc, $awk);
+    my $hdr_val2 = &NeuroDB::MRI::fetch_header_info($minc, $argument);
     if ($hdr_val2) {
         return 1;
     } else {
@@ -719,45 +894,22 @@ sub modify_header {
 }
 
 
-
-
 =pod
-Function that fetch header information in minc file 
-Inputs:  - $field: field to look for in minc header
-         - $minc: minc file
-         - $awk: awk information to check if argument not already inserted in minc header
-         - $keep_semicolon: if defined, keep semicolon at the end of the value extracted
-Outputs: - $value: value of the field found in the minc header
-=cut
-sub fetch_header_info {
-    my  ($field, $minc, $awk, $keep_semicolon)  =   @_;
 
-    my  $val    =   `mincheader $minc | grep $field | awk '{print $awk}' | tr '\n' ' '`;
-    my  $value  =   $val    if  $val !~ /^\s*"*\s*"*\s*$/;
-    if ($value) {
-        $value  =~  s/^\s+//;                           # remove leading spaces
-        $value  =~  s/\s+$//;                           # remove trailing spaces
-        $value  =~  s/;//   unless ($keep_semicolon);   # remove ";" unless $keep_semicolon is defined
-    } else {
-        return undef;
-    }
+=head3 get_header_list($splitter, $fields)
 
-    return  ($value);
-}
+Gets the list of arguments and values to insert into the MINC header
+(C<acquisition:*>, C<patient:*> and C<study:*>).
 
+INPUTS:
+  - $splitter: delimiter used to split list of fields stored in C<$fields>
+  - $fields  : list header arguments/values to insert in the MINC header
 
-
-
-
-
-
-=pod
-Get the list of arguments and values to insert into the mincheader (acquisition:*, patient:* and study:*).
-Inputs:  - $splitter: splitter used to separate list of fields stored in $fields
-         - $fields: list header arguments and values to insert in the minc header
-Outputs: - $list: array of header arguments and values' list
+RETURNS: - $list     : array of header arguments and values' list
          - $list_size: size of the array $list
+
 =cut
+
 sub get_header_list {
     my  ($splitter, $fields) =   @_;
     
@@ -776,21 +928,22 @@ sub get_header_list {
 }
 
 
-
-
-
-
-
-
-
 =pod
-Function that runs diff_preprocess.pl script from the mincdiffusion tools on the QCed minc and raw anat dataset.
-- Arguments:- $dti_file: hash key to use to fetch file names (a.k.a. Raw DTI file) 
-            - $DTIrefs: hash storing file names to be used
-            - $QCoutdir: directory used to create outputs from QC pipeline
-- Returns:  - 1 if all outputs were created
-            - undef if outputs were not created
+
+=head3 mincdiff_preprocess($dti_file, $DTIrefs, $QCoutdir)
+
+Function that runs C<diff_preprocess.pl> script from the C<mincdiffusion>
+tools on the QCed MINC and raw anat dataset.
+
+INPUTS:
+  - $dti_file: hash key to use to fetch file names (e.g. raw DWI file)
+  - $DTIrefs : hash storing file names to be used
+  - $QCoutdir: directory used to create outputs from QC pipeline
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub mincdiff_preprocess {
     my ($dti_file, $DTIrefs, $QCoutdir) = @_;    
     
@@ -818,21 +971,22 @@ sub mincdiff_preprocess {
 }
 
 
-
-
-
-
-
-
-
 =pod
-Function that runs minctensor.pl script from the mincdiffusion tools on the mincdiff preprocessed minc and anatomical mask images.
-- Arguments:- $dti_file: hash key to use to fetch file names (a.k.a. Raw DTI file) 
-            - $DTIrefs: hash storing file names to be used
-            - $QCoutdir: directory used to create outputs from QC pipeline
-- Returns:  - 1 if all outputs were created
-            - undef if outputs were not created
+
+=head3 mincdiff_minctensor($dti_file, $DTIrefs, $QCoutdir, $niak_path)
+
+Function that runs C<minctensor.pl> script from the C<mincdiffusion> tools on
+the C<mincdiff> preprocessed MINC and anatomical mask images.
+
+INPUTS:
+  - $dti_file: hash key to use to fetch file names (e.g. raw DWI file)
+  - $DTIrefs : hash storing file names to be used
+  - $QCoutdir: directory used to create outputs from QC pipeline
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub mincdiff_minctensor {
     my ($dti_file, $DTIrefs, $QCoutdir, $niak_path) = @_;
 
@@ -864,20 +1018,20 @@ sub mincdiff_minctensor {
 }
 
 
-
-
-
-
-
-
-
 =pod
-Function that runs mincpik on the RGB map.
-- Arguments:- $dti_file: hash key to use to fetch file names (a.k.a. Raw DTI file) 
-            - $DTIrefs: hash storing file names to be used
-- Returns:  - 1 if rgb_pic was created
-            - undef if rgb_pic was not created
+
+=head3 RGBpik_creation($dti_file, $DTIrefs)
+
+Function that runs C<mincpik.pl> on the RGB map.
+
+INPUTS:
+  - $dti_file: hash key to use to fetch file names (e.g. raw DWI file)
+  - $DTIrefs : hash storing file names to be used
+
+RETURNS: 1 on success, undef on failure
+
 =cut
+
 sub RGBpik_creation {
     my ($dti_file, $DTIrefs) = @_;
 
@@ -887,8 +1041,8 @@ sub RGBpik_creation {
         # 2. output file
     my $rgb_pic = $DTIrefs->{$dti_file}{'Postproc'}{'rgb_pic'};   
 
-    # Run mincpik on the RGB map
-    `mincpik -triplanar -horizontal $RGB $rgb_pic`;
+    # Run mincpik.pl on the RGB map
+    `mincpik.pl -triplanar -horizontal $RGB $rgb_pic`;
 
     # Check that the RGB pik was created
     if (-e $rgb_pic) {
@@ -899,34 +1053,28 @@ sub RGBpik_creation {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 =pod
-This function will check if all DTIPrep nrrd files were created and convert them into minc files with relevant header information inserted.
-- Inputs:   - $dti_file         = raw DTI dataset that was processed through DTIPrep
-            - $DTIrefs          = hash containing information about output names for all DWI datasets
-            - $data_dir         = directory containing raw DTI dataset
-            - $DTIPrepVersion   = DTIPrep version that was used to post process the DTI dataset
-- Outputs:  - $nrrds_found set to 1 if all nrrd outputs were found. If not, $nrrds_found is not defined
-            - $mincs_created set to 1 if all nrrd files were successfully converted to minc files. If not, $mincs_
-created is not defined.
-            - $hdrs_inserted set to 1 if all relevant header information were successfully inserted into the minc files. If not, $hdrs_inserted is not defined.
+
+=head3 convert_DTIPrep_postproc_outputs($dti_file, $DTIrefs, $data_dir, $DTIPrepVersion)
+
+This function will check if all C<DTIPrep> NRRD files were created and convert
+them into MINC files with relevant header information inserted.
+
+INPUTS:
+  - $dti_file      : raw DTI dataset that was processed through C<DTIPrep>
+  - $DTIrefs       : hash containing information about output names
+  - $data_dir      : directory containing raw DTI dataset
+  - $DTIPrepVersion: C<DTIPrep> version used to process the DWI dataset
+
+RETURNS:
+  - $nrrds_found  : 1 if all NRRD outputs found, undef otherwise
+  - $mincs_created: 1 if all NRRD files converted to MINC files,
+                      undef otherwise
+  - $hdrs_inserted: 1 if all header info inserted in MINC files,
+                      undef otherwise
+
 =cut
+
 sub convert_DTIPrep_postproc_outputs {
     my ($dti_file, $DTIrefs, $data_dir, $QCTxtReport, $DTIPrepVersion) = @_;
 
@@ -980,15 +1128,26 @@ sub convert_DTIPrep_postproc_outputs {
     return ($nrrds_found, $mincs_created, $hdrs_inserted);
 
 }
+
 =pod
-Summarize which directions were rejected by DTIPrep for slice-wise correlations, 
+
+=head3 getRejectedDirections($data_dir, $XMLReport)
+
+Summarize which directions were rejected by C<DTIPrep> for slice-wise
+correlations,
 inter-lace artifacts, inter-gradient artifacts.
-Inputs:  - $data_dir = data_dir defined in the config file
-         - $QCReport = DTIPrep's QC txt report to extract rejected directions
-Outputs: - $rm_slicewise        = directions rejected due to slice wise correlations (number)
-         - $rm_interlace        = directions rejected due to interlace artifacts (number)
-         - $rm_intergradient    = directions rejected due to inter-gradient artifacts (number)
+
+INPUTS:
+  - $data_dir: data_dir defined in the config file
+  - $QCReport: C<DTIPrep>'s QC txt report to extract rejected directions
+
+RETURNS: 
+  - number of directions rejected due to slice wise correlations
+  - number of directions rejected due to interlace artifacts
+  - number of directions rejected due to inter-gradient artifacts
+
 =cut
+
 sub getRejectedDirections   {
     my ($data_dir, $XMLReport)  =   @_;
 
@@ -1055,3 +1214,22 @@ sub getRejectedDirections   {
 
     return (\%summary);
 }
+
+1;
+
+__END__
+
+
+=pod
+
+=head1 LICENSING
+
+License: GPLv3
+
+=head1 AUTHORS
+
+LORIS community <loris.info@mcin.ca> and McGill Centre for Integrative Neuroscience
+
+=cut
+
+
