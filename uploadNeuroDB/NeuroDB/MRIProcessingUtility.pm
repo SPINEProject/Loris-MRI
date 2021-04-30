@@ -17,16 +17,11 @@ utilities
                         $logfile, $LogDir, $verbose
                       );
 
-  %tarchiveInfo     = $utility->createTarchiveArray(
-                        $ArchiveLocation, $globArchiveLocation
-                      );
+  %tarchiveInfo     = $utility->createTarchiveArray($ArchiveLocation);
 
   my ($center_name, $centerID) = $utility->determinePSC(\%tarchiveInfo,0);
 
-  my $scannerID     = $utility->determineScannerID(
-                        \%tarchiveInfo, 0,
-                        $centerID,      $NewScanner
-                      );
+  my $scannerID     = $utility->determineScannerID(\%tarchiveInfo, 0, $centerID);
 
   my $subjectIDsref = $utility->determineSubjectID(
                         $scannerID,
@@ -70,6 +65,7 @@ use NeuroDB::DatabaseException;
 
 use NeuroDB::objectBroker::ObjectBrokerException;
 use NeuroDB::objectBroker::ConfigOB;
+use NeuroDB::objectBroker::TarchiveOB;
 
 use Path::Class;
 use Scalar::Util qw(blessed);
@@ -443,43 +439,28 @@ sub determineSubjectID {
 
 =pod
 
-=head3 createTarchiveArray($tarchive, $globArchiveLocation)
+=head3 createTarchiveArray($tarchive)
 
-Creates the DICOM archive information hash ref.
+Creates the DICOM archive information hash ref for the tarchive that has the same
+basename as the file path passed as argument.
 
 INPUTS:
-  - $tarchive           : tarchive's path
-  - $globArchiveLocation: globArchiveLocation argument specified when running
-                           the insertion scripts
+  - $tarchive           : tarchive's path (absolute or relative).
 
-RETURNS: DICOM archive information hash ref
+RETURNS: DICOM archive information hash ref if exactly one archive was found. Exits
+         when either no match or multiple matches are found.
 
 =cut
 
 sub createTarchiveArray {
 
     my $this = shift;
-    my %tarchiveInfo;
-    my ($tarchive,$globArchiveLocation) = @_;
-    my $where = "ArchiveLocation='$tarchive'";
-    if ($globArchiveLocation) {
-        $where = "ArchiveLocation LIKE '%".basename($tarchive)."'";
-    }
-    my $query = "SELECT PatientName, PatientID, PatientDoB, md5sumArchive,".
-                " DateAcquired, DicomArchiveID, PatientSex,".
-                " ScannerManufacturer, ScannerModel, ScannerSerialNumber,".
-                " ScannerSoftwareVersion, neurodbCenterName, TarchiveID,".
-                " SourceLocation, ArchiveLocation FROM tarchive WHERE $where";
-    if ($this->{debug}) {
-        print $query . "\n";
-    }
-    my $sth = ${$this->{'dbhr'}}->prepare($query);
-    $sth->execute();
+    my ($tarchive) = @_;
 
-    if ($sth->rows > 0) {
-        my $tarchiveInfoRef = $sth->fetchrow_hashref();
-        %tarchiveInfo = %$tarchiveInfoRef;
-    } else {
+    my $tarchiveOB = NeuroDB::objectBroker::TarchiveOB->new(db => $this->{'db'});
+    my $tarchiveInfoRef = $tarchiveOB->getByTarchiveLocation($tarchive);
+
+    if (!@$tarchiveInfoRef) {
         my $message = "\nERROR: Only archived data can be uploaded.".
                       "This seems not to be a valid archive for this study!".
                       "\n\n";
@@ -488,9 +469,19 @@ sub createTarchiveArray {
         # in the notification_spool
         $this->spool($message, 'Y', undef, $notify_notsummary);
         exit $NeuroDB::ExitCodes::SELECT_FAILURE;
+    } elsif (@$tarchiveInfoRef > 1) {
+        my $message = "\nERROR: Found multiple archives with the same basename ".
+                      " as $tarchive when only one match was expected!".
+                      "\n\n";
+        $this->writeErrorLog($message, $NeuroDB::ExitCodes::SELECT_FAILURE);
+        # Since multiple tarchives were found we cannot determine the upload ID
+        # Set it to  undef for this notification
+        $this->spool($message, 'Y', undef, $notify_notsummary);
+        exit $NeuroDB::ExitCodes::SELECT_FAILURE;
     }
 
-    return %tarchiveInfo;
+    # Only one archive matches: return it as a hash
+    return %{ $tarchiveInfoRef->[0] };
 }
 
 
@@ -551,16 +542,16 @@ sub determinePSC {
 
 =pod
 
-=head3 determineScannerID($tarchiveInfo, $to_log, $centerID, $NewScanner, $upload_id)
+=head3 determineScannerID($tarchiveInfo, $to_log, $centerID, $upload_id)
 
-Determines which scanner ID was used for DICOM acquisitions.
+Determines which scanner ID was used for DICOM acquisitions. Note, if 
+a scanner ID is not already associated to the scanner information found
+in the DICOM headers, then a new scanner will automatically be created.
 
 INPUTS:
   - $tarchiveInfo: archive information hash ref
   - $to_log      : whether this step should be logged
   - $centerID    : center ID
-  - $NewScanner  : whether a new scanner entry should be created if the scanner
-                   used is a new scanner for the study
   - $upload_id   : upload ID of the study
 
 RETURNS: scanner ID
@@ -570,7 +561,7 @@ RETURNS: scanner ID
 sub determineScannerID {
 
     my $this = shift;
-    my ($tarchiveInfo, $to_log, $centerID, $NewScanner, $upload_id) = @_;
+    my ($tarchiveInfo, $to_log, $centerID, $upload_id) = @_;
     my $message = '';
     $to_log = 1 unless defined $to_log;
     if ($to_log) {
@@ -587,15 +578,12 @@ sub determineScannerID {
             $tarchiveInfo->{'ScannerSoftwareVersion'},
             $centerID,
             $this->{dbhr},
-            $NewScanner,
             $this->{'db'}
         );
     if ($scannerID == 0) {
         if ($to_log) {
             $message = "\nERROR: The ScannerID for this particular scanner ".
-                          "does not exist. Enable creating new ScannerIDs in ".
-                          "your profile or this archive can not be ".
-                          "uploaded.\n\n";
+                          "does not exist and could not be created.\n\n";
             $this->writeErrorLog(
                 $message, $NeuroDB::ExitCodes::SELECT_FAILURE
             );
@@ -1247,6 +1235,13 @@ sub registerScanIntoDB {
         $${minc_file}->setFileData(
             'File', 
             $file_path
+        );
+
+        #### set the acquisition_date
+        my $acquisition_date = $${minc_file}->getParameter('acquisition_date') || undef;
+        $${minc_file}->setFileData(
+            'AcquisitionDate',
+            $acquisition_date
         );
 
         ########################################################

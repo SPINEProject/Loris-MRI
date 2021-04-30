@@ -201,8 +201,7 @@ my $system          = `uname`;
 
 # Remove all files starting with . and __MACOSX in the dcm_source directory
 my @args = ($dcm_source);
-push(@args, qw/-type f -name .* -delete -o -type d -name __MACOSX -exec rm -rf {} +/);
-print "find @args";
+push(@args, qw/-type -f -name __MACOSX -delete -o -name .* -delete/);
 system('find', @args);
 
 # create new summary object
@@ -328,7 +327,7 @@ if ($dbase) {
 # call the updateMRI_upload script###
 if ($mri_upload_update) {
     my $script =  "updateMRI_Upload.pl"
-                 . " -profile $profile -globLocation -tarchivePath $finalTarget"
+                 . " -profile $profile -tarchivePath $finalTarget"
                  . " -sourceLocation $dcm_source";
     my $output = system($script);
     if ($output!=0)  {

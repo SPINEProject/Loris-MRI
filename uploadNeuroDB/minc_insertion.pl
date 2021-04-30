@@ -25,12 +25,6 @@ Available options are:
 
 -tarchivePath: the absolute path to the tarchive file
 
--globLocation: loosens the validity check of the tarchive allowing
-               for the possibility that the tarchive was moved
-               to a different directory
-
--newScanner  : if set [default], new scanner will be registered
-
 -xlog        : opens an xterm with a tail on the current log file
 
 -verbose     : if set, be verbose
@@ -94,8 +88,9 @@ use NeuroDB::DatabaseException;
 
 use NeuroDB::objectBroker::ObjectBrokerException;
 use NeuroDB::objectBroker::ConfigOB;
+use NeuroDB::objectBroker::MriUploadOB;
 
-
+use constant GET_COLUMNS => 0;
 
 my $versionInfo = sprintf "%d revision %2d", q$Revision: 1.24 $ 
     =~ /: (\d+)\.(\d+)/;
@@ -119,16 +114,13 @@ my $reckless    = 0;           # this is only for playing and testing. Don't
                                # set it to 1!!!
 my $force       = 0;           # This is a flag to force the script to run  
                                # Even if the validation has failed
-my $NewScanner  = 1;           # This should be the default unless you are a 
-                               # control freak
 my $xlog        = 0;           # default should be 0
 my $bypass_extra_file_checks=0;# If you need to bypass the extra_file_checks, set to 1.
 my $acquisitionProtocol=undef; # Specify the acquisition Protocol also bypasses the checks
 my $acquisitionProtocolID;     # acquisition Protocol id
 my $extra_validation_status;   # Initialise the extra validation status
 my $create_minc_pics    = 0;   # Default is 0, set the option to overide.
-my $globArchiveLocation = 0;   # whether to use strict ArchiveLocation strings
-                               # or to glob them (like '%Loc')
+
 my $template    = "TarLoad-$hour-$min-XXXXXX"; # for tempdir
 my ($tarchive,%studyInfo,$minc);
 my $User = getpwuid($>);
@@ -159,15 +151,6 @@ my @opt_table = (
 
                  ["-tarchivePath","string",1, \$tarchive, "The absolute path". 
                   " to tarchive-file"],
-
-                 ["-globLocation", "boolean", 1, \$globArchiveLocation,
-                  "Loosen the validity check of the tarchive allowing for the". 
-                  " possibility that the tarchive was moved to a different". 
-                  " directory."],
-
-                 ["-newScanner", "boolean", 1, \$NewScanner,
-                  "By default a new scanner will be registered if the data".
-                  " you upload requires it. You can risk turning it off."],
 
                  ["Fancy options","section"],
 
@@ -350,39 +333,21 @@ QUERY
     $ArchiveLocation = $array[1];
 
     # create the studyInfo object
-    %studyInfo = $utility->createTarchiveArray(
-        $ArchiveLocation, $globArchiveLocation
-    );
+    %studyInfo = $utility->createTarchiveArray($ArchiveLocation);
 
 } elsif ($tarchive) {
-    # if only the tarchive path is given as an argument, find the associated UploadID
-    # and check if IsTarchiveValidated is set to 1.
-    $ArchiveLocation = $tarchive;
-    $ArchiveLocation    =~ s/$tarchiveLibraryDir\/?//g;
+    my $mriUploadOB = NeuroDB::objectBroker::MriUploadOB->new(db => $db);
+    my $mriUploadsRef = $mriUploadOB->getWithTarchive(GET_COLUMNS, $tarchive);
 
-    my $where = "WHERE ArchiveLocation='$tarchive'";
-    if ($globArchiveLocation) {
-        $where = "WHERE ArchiveLocation LIKE '%/" . quotemeta(basename($tarchive)) . "' "
-                 . "OR ArchiveLocation = '" . quotemeta(basename($tarchive)) . "'";
-    }
-    my $query = "SELECT IsTarchiveValidated, UploadID, SourceLocation "
-                . "FROM mri_upload "
-                . "JOIN tarchive USING (TarchiveID) $where ";
-    my $sth   = $dbh->prepare($query);
-    print $query . "\n" if $debug;
-
-    $sth->execute();
     my $errorMessage;
-    if ($sth->rows == 0) {
-        $errorMessage = $globArchiveLocation
-            ? "No mri_upload with the same archive location basename as '$tarchive'\n"
-            : "No mri_upload with archive location '$tarchive'\n";
+    if (!@$mriUploadsRef) {
+        $errorMessage = "No mri_upload with the same archive location basename as '$tarchive'\n";
         $utility->writeErrorLog(
             $errorMessage, $NeuroDB::ExitCodes::INVALID_ARG, $logfile
         );
         print STDERR $errorMessage;
         exit $NeuroDB::ExitCodes::INVALID_ARG;
-    } elsif ($sth->rows > 1) {
+    } elsif (@$mriUploadsRef > 1) {
         $errorMessage = "\nERROR: found more than one UploadID associated with "
                         . "this ArchiveLocation ($tarchive). Please specify the "
                         . "UploadID to use using the -uploadID option.\n\n";
@@ -392,15 +357,13 @@ QUERY
         print STDERR $errorMessage;
         exit $NeuroDB::ExitCodes::INVALID_ARG;
     } else {
-        my %row          = $sth->fetchrow_hashref();
-        $is_valid        = $row{isTarchiveValidated};
-        $upload_id       = $row{UploadID};
+        my %row          = %{ $mriUploadsRef->[0] };
+        $is_valid        = $row{'isTarchiveValidated'};
+        $upload_id       = $row{'UploadID'};
     }
 
     # load the DICOM archive information from the tarchive table in studyInfo object
-    %studyInfo = $utility->createTarchiveArray(
-        $ArchiveLocation, $globArchiveLocation
-    );
+    %studyInfo = $utility->createTarchiveArray($ArchiveLocation);
 }
 
 if ((!defined $is_valid || $is_valid == 0) && !$force) {
@@ -489,9 +452,7 @@ $studyInfo{'DateAcquired'}           //= $file->getParameter('study:start_date')
 
 ## Determine PSC, ScannerID and Subject IDs
 my ($center_name, $centerID) = $utility->determinePSC(\%studyInfo, 0, $upload_id);
-my $scannerID = $utility->determineScannerID(
-    \%studyInfo, 0, $centerID, $NewScanner, $upload_id
-);
+my $scannerID = $utility->determineScannerID(\%studyInfo, 0, $centerID, $upload_id);
 my $subjectIDsref = $utility->determineSubjectID(
     $scannerID, \%studyInfo, 0, $upload_id, $User, $centerID
 );
