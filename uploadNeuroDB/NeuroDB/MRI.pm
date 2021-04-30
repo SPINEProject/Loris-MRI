@@ -1162,10 +1162,18 @@ sub compute_hash {
     }
     # processing:intergradient_rejected minc field is the only field
     # separating a noRegQCedDTI and a QCedDTI minc file.
+    # AMP
+    $ctx->add($file->getFileDatum('File'));
+    print "\nDimensionsXYZ:" . $file->getParameter('xspace') . "," . $file->getParameter('yspace') . "," . $file->getParameter('zspace') . "\n\n";
+    # PMA
     }
 
     # finally generate the hex digest
     my $digest = $ctx->hexdigest;
+
+    # AMP
+    print "\nHash:" . $digest . "\n\n";
+    # PMA
 
     close FILE;
     return $digest;
@@ -1553,7 +1561,7 @@ sub isDicomImage {
     # not return one file per line but many files in one line. Writing in a
     # temporary file on which we run the command `cat` seems to be the only option
     # that works at the moment...
-    my $tmp_file = $ENV{'TMPDIR'} . "/tmp_list";
+    my $tmp_file = $ENV{'TMPDIR'} . "/tmp_list.$$";
     open(my $fh, '>', $tmp_file) or die "Could not open file '$tmp_file' $!";
     foreach my $file (@files_list) {
         printf $fh "%s\n", quotemeta($file);

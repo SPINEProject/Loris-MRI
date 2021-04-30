@@ -1,17 +1,17 @@
 # to source the MINC toolkit
-source %MINC_TOOLKIT_DIR%/minc-toolkit-config.sh
+source /opt/minc/1.9.18/minc-toolkit-config.sh
 umask 0002
 
 # export PATH, PERL5LIB, TMPDIR and LORIS_CONFIG variables
-export PATH=/data/%PROJECT%/bin/mri:/data/%PROJECT%/bin/mri/uploadNeuroDB:/data/%PROJECT%/bin/mri/uploadNeuroDB/bin:/data/%PROJECT%/bin/mri/dicom-archive:/data/%PROJECT%/bin/mri/python:/data/%PROJECT%/bin/mri/tools:/data/%PROJECT%/bin/mri/python/react-series-data-viewer:%MINC_TOOLKIT_DIR%/bin:$PATH
-export PERL5LIB=/data/%PROJECT%/bin/mri/uploadNeuroDB:/data/%PROJECT%/bin/mri/dicom-archive:$PERL5LIB
+export PATH=/opt/minc/1.9.16/bin:/data_/ipmsa/loris_data/IPMSA/bin/mri:/data_/ipmsa/loris_data/IPMSA/bin/mri/uploadNeuroDB:/data_/ipmsa/loris_data/IPMSA/bin/mri/uploadNeuroDB/bin:/data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive:$PATH
+export PERL5LIB=/data_/ipmsa/loris_data/IPMSA/bin/mri/uploadNeuroDB:/data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive:$PERL5LIB
 export TMPDIR=/tmp
-export LORIS_CONFIG=/data/%PROJECT%/bin/mri/dicom-archive
+export LORIS_CONFIG=/data_/ipmsa/loris_data/IPMSA/bin/mri/dicom-archive
 
 # for the Python scripts
-export LORIS_MRI=/data/%PROJECT%/bin/mri
-export PYTHONPATH=$PYTHONPATH:/data/%PROJECT%/bin/mri/python:/data/%PROJECT%/bin/mri/python/react-series-data-viewer
-source /data/%PROJECT%/bin/mri/python_virtualenvs/loris-mri-python/bin/activate
+export LORIS_MRI=/data_/ipmsa/loris_data/IPMSA/bin/mri
+export PYTHONPATH=$PYTHONPATH:/data_/ipmsa/loris_data/IPMSA/bin/mri/python:/data_/ipmsa/loris_data/IPMSA/bin/mri/python/react-series-data-viewer
+source /data_/ipmsa/loris_data/IPMSA/bin/mri/python_virtualenvs/loris-mri-python/bin/activate
 
 # for the defacing scripts
 export BEASTLIB=%MINC_TOOLKIT_DIR%/../share/beast-library-1.1
